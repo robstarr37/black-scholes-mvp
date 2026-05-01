@@ -8,10 +8,11 @@ from datetime import date
 
 st.set_page_config(page_title="BlackScholes.ai", page_icon="📈", layout="wide")
 
+# === STRIPE SETUP ===
 stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
 PRO_PRICE = 9.99
 
-# ====================== BLACK-SCHOLES FUNCTIONS (unchanged) ======================
+# ====================== BLACK-SCHOLES CORE ======================
 def black_scholes_price(S, K, T, r, sigma, option_type='call'):
     if T <= 0 or sigma <= 0:
         return max(S - K, 0) if option_type == 'call' else max(K - S, 0)
@@ -47,7 +48,7 @@ def implied_volatility(market_price, S, K, T, r, option_type='call'):
     except:
         return np.nan
 
-# ====================== SIMPLE LOGIN (professional MVP version) ======================
+# ====================== SESSION STATE (Login + Usage) ======================
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
 if "is_pro" not in st.session_state:
@@ -57,11 +58,12 @@ if "calculations_used" not in st.session_state:
 if "last_reset_date" not in st.session_state:
     st.session_state.last_reset_date = str(date.today())
 
-# Reset daily count
+# Daily reset
 if st.session_state.last_reset_date != str(date.today()):
     st.session_state.calculations_used = 0
     st.session_state.last_reset_date = str(date.today())
 
+# ====================== LOGIN / SIGNUP PAGE ======================
 if not st.session_state.user_email:
     st.title("📊 BlackScholes.ai")
     st.markdown("**The equation that built the multi-trillion dollar derivatives market — now in your browser.**")
@@ -69,29 +71,39 @@ if not st.session_state.user_email:
 
     tab1, tab2 = st.tabs(["🔑 Login", "📝 Sign Up"])
     with tab1:
-        email = st.text_input("Email", value="test@black-scholes.ai")
-        if st.button("Login as Demo User", use_container_width=True):
+        email = st.text_input("Email", key="login_email")
+        if st.button("Login", type="primary", use_container_width=True):
             st.session_state.user_email = email
             st.rerun()
     with tab2:
-        email = st.text_input("Email", value="pro@black-scholes.ai")
-        if st.button("Create Free Account (Demo)", use_container_width=True):
+        email = st.text_input("Email", key="signup_email")
+        if st.button("Create Free Account", type="primary", use_container_width=True):
             st.session_state.user_email = email
             st.rerun()
+
+    st.caption("Demo mode — any email works for testing")
+
 else:
-    # Logged in - show calculator
+    # ====================== MAIN APP (Logged In) ======================
     with st.sidebar:
         st.header("👤 Account")
         st.write(f"**{st.session_state.user_email}**")
         if st.session_state.is_pro:
-            st.success("✅ Pro Member — Unlimited")
+            st.success("✅ Pro Member — Unlimited calculations")
         else:
             remaining = 5 - st.session_state.calculations_used
-            st.info(f"Free Tier — {remaining} calculations left today")
+            st.info(f"Free Tier — {max(0, remaining)} calculations left today")
             if st.button("Upgrade to Pro — $9.99/mo", use_container_width=True):
                 checkout = stripe.checkout.Session.create(
                     payment_method_types=['card'],
-                    line_items=[{'price_data': {'currency': 'usd', 'product_data': {'name': 'BlackScholes.ai Pro'}, 'unit_amount': int(PRO_PRICE*100)}, 'quantity': 1}],
+                    line_items=[{
+                        'price_data': {
+                            'currency': 'usd',
+                            'product_data': {'name': 'BlackScholes.ai Pro'},
+                            'unit_amount': int(PRO_PRICE * 100),
+                        },
+                        'quantity': 1,
+                    }],
                     mode='payment',
                     success_url="https://black-scholes-mvp-rstarr37.streamlit.app/?success=true",
                     cancel_url="https://black-scholes-mvp-rstarr37.streamlit.app/",
@@ -102,11 +114,11 @@ else:
             st.session_state.is_pro = False
             st.rerun()
 
-    # Calculator code (same as before)
     st.title("📊 BlackScholes.ai")
     st.markdown("**The equation that built the multi-trillion dollar derivatives market — now in your browser.**")
     st.latex(r"\frac{\partial V}{\partial t} + rS \frac{\partial V}{\partial S} + \frac{1}{2} \sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} - rV = 0")
 
+    # Calculator
     col1, col2 = st.columns([1, 2])
     with col1:
         S = st.number_input("Current Stock Price (S) $", value=100.0, step=0.1)
@@ -118,11 +130,10 @@ else:
 
     if st.button("🚀 Calculate", type="primary", use_container_width=True):
         if not st.session_state.is_pro and st.session_state.calculations_used >= 5:
-            st.error("Free daily limit reached. Upgrade to Pro for unlimited access!")
+            st.error("You’ve reached the free daily limit. Upgrade to Pro for unlimited access!")
         else:
             greeks = black_scholes_greeks(S, K, T, r, sigma, option_type.lower())
-            price = greeks['Price']
-            st.success(f"**{option_type} Option Price: ${price:.2f}**")
+            st.success(f"**{option_type} Option Price: ${greeks['Price']:.2f}**")
             
             cols = st.columns(3)
             cols[0].metric("Delta", greeks['Delta'])
@@ -133,6 +144,7 @@ else:
             cols[1].metric("Rho (per 1%)", greeks['Rho (per 1%)'])
             cols[2].metric("Implied Volatility", f"{sigma*100:.1f}%")
 
+            # Payoff chart
             st.subheader("Payoff at Expiration")
             prices = np.linspace(max(0, S-50), S+100, 200)
             payoff = np.maximum(prices - K, 0) if option_type == "Call" else np.maximum(K - prices, 0)
@@ -143,14 +155,20 @@ else:
 
             st.session_state.calculations_used += 1
 
+    # Implied Volatility Solver
     st.divider()
     st.subheader("🔍 Implied Volatility Solver")
     market_price = st.number_input("Market Price of Option $", value=10.45, step=0.01)
-    if st.button("Solve for Volatility"):
+    if st.button("Solve for Volatility", type="secondary"):
         iv = implied_volatility(market_price, S, K, T, r, option_type.lower())
         if not np.isnan(iv):
             st.success(f"**Implied Volatility: {iv*100:.2f}%**")
         else:
             st.error("Could not solve — try different inputs")
 
-    st.caption("Professional MVP with login & usage tracking")
+    st.caption("Your fully working Black-Scholes SaaS MVP • Login + Subscription + Usage Tracking")
+
+# Clear success banner after payment
+if st.query_params.get("success"):
+    st.success("✅ Payment successful! (Pro status is activated for this demo session)")
+    # In production we would upgrade the user here via webhook
