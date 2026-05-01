@@ -30,7 +30,7 @@ with st.sidebar:
         st.success("✅ Pro User")
     else:
         st.info("Free Tier — 5 calculations left today")
-        if st.button("Upgrade to Pro — $9.99/mo"):
+        if st.button("Upgrade to Pro — $9.99/mo", use_container_width=True):
             try:
                 checkout_session = stripe.checkout.Session.create(
                     payment_method_types=['card'],
@@ -38,15 +38,15 @@ with st.sidebar:
                         'price_data': {
                             'currency': 'usd',
                             'product_data': {'name': 'BlackScholes.ai Pro'},
-                            'unit_amount': int(PRO_PRICE * 100),
+                            'unit_amount': int(999),  # $9.99
                         },
                         'quantity': 1,
                     }],
-                    mode='payment',   # Change to 'subscription' later for recurring
+                    mode='payment',
                     success_url="https://black-scholes-mvp-rstarr37.streamlit.app/?success=true",
                     cancel_url="https://black-scholes-mvp-rstarr37.streamlit.app/",
                 )
-                st.switch_page(checkout_session.url)  # Redirect to Stripe checkout
+                st.link_button("Go to Stripe Checkout", checkout_session.url, use_container_width=True)
             except Exception as e:
                 st.error(f"Error: {e}")
 
